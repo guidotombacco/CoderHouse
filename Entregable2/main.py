@@ -1,15 +1,11 @@
 import requests
 from collections import namedtuple
-import redshift_connector
 
 import pandas as pd
-from sqlalchemy import create_engine, text
-import psycopg2
-hostname= 'data-engineer-cluster.cyhh5bfevlmn.us-east-1.redshift.amazonaws.com'
-database= 'data-engineer-database'
-username= 'guidotombacco_coderhouse'
-pwd='Jd2iE008KW'
-port_id= '5439'
+from sqlalchemy import create_engine
+import json
+
+#Ejecutar 'pip install sqlalchemy-redshift' para importar dependencias de redshift y que funcione el engine
 
 r = requests.get("https://api.open-meteo.com/v1/forecast?latitude=-29.7125&longitude=-57.0877&hourly=temperature_2m,precipitation_probability,rain,visibility,windspeed_10m&timezone=America%2FSao_Paulo&forecast_days=1")
 
@@ -17,28 +13,19 @@ r = requests.get("https://api.open-meteo.com/v1/forecast?latitude=-29.7125&longi
 def customClimaDecoder(climaDict):
     return namedtuple('X', climaDict.keys())(*climaDict.values())
 
-df = pd.read_json(r.text)
+df = pd.DataFrame()
+json_object = json.loads(r.text, object_hook=customClimaDecoder)
 
-redshift_connector.paramstyle = 'numeric'
-engine= create_engine("postgresql://postgres:david9.25.38@localhost:5432/Semana6_DE")
-conn = redshift_connector.connect(
-    host='data-engineer-cluster.cyhh5bfevlmn.us-east-1.redshift.amazonaws.com',
-    database='data-engineer-database',
-    port=5439,
-    user='guidotombacco_coderhouse',
-    password='Jd2iE008KW'
-)
+df["fecha"] = json_object.hourly.time
+df["temperatura"] = json_object.hourly.temperature_2m
+df["precipitacion"] = json_object.hourly.precipitation_probability
+df["lluvia"] = json_object.hourly.rain
+df["visibilidad"] = json_object.hourly.visibility
+df["velocidadViento"] = json_object.hourly.windspeed_10m
 
-conn.autocommit = True
-cursor = conn.cursor()
+connection_string = "redshift+psycopg2://guidotombacco_coderhouse:Jd2iE008KW@data-engineer-cluster.cyhh5bfevlmn.us-east-1.redshift.amazonaws.com:5439/data-engineer-database"
 
-df.to_sql()
+engine = create_engine(connection_string)
+df.to_sql('clima', engine, if_exists='append', index=False)
 
-for i in range(len(tiempo)):
-    sql = 'insert into clima(fecha, temperatura, precipitacion, lluvia, visibilidad, velocidadViento) VALUES(:1, :2, :3, :4, :5, :6)'
-    
-    cursor.execute(sql, (tiempo[i], temperatura[i], precipitacion[i], lluvia[i], visibilidad[i], viento_velocidad[i]))
-
-cursor.close()
-conn.close()
 
